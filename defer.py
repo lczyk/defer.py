@@ -19,7 +19,7 @@ _T = TypeVar("_T", bound=Callable[..., Any])
 
 __all__ = ["defer", "defers_collector"]
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 log = logging.getLogger(__name__)
 
