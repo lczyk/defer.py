@@ -80,6 +80,65 @@ def test_late_binding_closure() -> None:
     assert out == [2, 2, 2]
 
 
+@pytest.mark.parametrize("kind", ["list", "set", "dict", "genexpr"])
+def test_defer_in_comprehension(kind: str) -> None:
+    out: list[int] = []
+
+    @defers_collector
+    def f() -> None:
+        fns = [lambda i=i: out.append(i) for i in range(3)]
+        if kind == "list":
+            [defer(fn) for fn in fns]
+        elif kind == "set":
+            {defer(fn) for fn in fns}
+        elif kind == "dict":
+            {i: defer(fn) for i, fn in enumerate(fns)}
+        else:
+            list(defer(fn) for fn in fns)
+
+    f()
+    assert out == [2, 1, 0]
+
+
+def test_defer_in_nested_comprehension() -> None:
+    out: list[tuple[int, int]] = []
+
+    @defers_collector
+    def f() -> None:
+        [
+            [defer(lambda i=i, j=j: out.append((i, j))) for j in range(2)]
+            for i in range(2)
+        ]
+
+    f()
+    assert out == [(1, 1), (1, 0), (0, 1), (0, 0)]
+
+
+def test_comprehension_in_undecorated_helper_raises() -> None:
+    def helper() -> None:
+        [defer(lambda: None) for _ in range(1)]
+
+    @defers_collector
+    def f() -> None:
+        helper()
+
+    with pytest.raises(RuntimeError, match="helper"):
+        f()
+
+
+def test_genexpr_consumed_elsewhere_raises() -> None:
+    @defers_collector
+    def consume(gen: Iterator[None]) -> None:
+        list(gen)
+
+    @defers_collector
+    def f() -> None:
+        consume(defer(lambda: None) for _ in range(1))
+
+    with pytest.raises(RuntimeError, match=r"f\.<locals>\.<genexpr>"):
+        f()
+
+
 def test_defer_in_undecorated_helper_raises() -> None:
     def helper() -> None:
         defer(lambda: None)

@@ -22,6 +22,7 @@ __version__ = "0.1.2"
 
 
 _WRAPPERS: set[CodeType] = set()
+_COMPREHENSIONS = frozenset({"<listcomp>", "<setcomp>", "<dictcomp>", "<genexpr>"})
 
 
 def defer(x: Deferable) -> None:
@@ -34,6 +35,15 @@ def defer(x: Deferable) -> None:
         raise TypeError(f"defer() argument must be callable, not {type(x).__name__}")
 
     frame = sys._getframe(1)
+    # comprehensions run in their own frame before 3.12, generator expressions always
+    # do. step out only into the function defining them, not whoever drives a genexpr.
+    while frame.f_code.co_name in _COMPREHENSIONS:
+        parent = frame.f_back
+        if parent is None or not any(
+            c is frame.f_code for c in parent.f_code.co_consts
+        ):
+            break
+        frame = parent
     wrapper = frame.f_back
     if wrapper is None or wrapper.f_code not in _WRAPPERS:
         raise RuntimeError(
