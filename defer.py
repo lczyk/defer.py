@@ -7,7 +7,7 @@ Based on https://habr.com/en/articles/191786/ by Denis Kolodin
 import inspect
 import sys
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from functools import wraps
 from types import TracebackType
 from typing import Any, TypeVar
@@ -99,6 +99,16 @@ def defers_collector(func: _T) -> _T:
                 return await func(*args, **kwargs)
 
         return async_wrapped  # type: ignore
+
+    if inspect.isgeneratorfunction(func):
+
+        @wraps(func)
+        def gen_wrapped(*args: object, **kwargs: object) -> Generator[Any, Any, Any]:
+            __defers__ = DefersContainer()
+            with __defers__:
+                return (yield from func(*args, **kwargs))
+
+        return gen_wrapped  # type: ignore
 
     @wraps(func)
     def wrapped(*args: object, **kwargs: object) -> object:

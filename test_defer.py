@@ -3,7 +3,7 @@ import inspect
 import subprocess
 import sys
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Generator, Iterator
 from pathlib import Path
 
 import pytest
@@ -241,6 +241,74 @@ def test_defer_outside_collector_is_noop() -> None:
     out: list[str] = []
     defer(lambda: out.append("never"))
     assert out == []
+
+
+################################################################################
+# generators
+
+
+def test_generator_defers_run_on_exhaustion() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    def gen() -> Iterator[int]:
+        defer(lambda: out.append("first"))
+        yield 1
+        defer(lambda: out.append("second"))
+        yield 2
+
+    it = gen()
+    assert out == []
+    assert list(it) == [1, 2]
+    assert out == ["second", "first"]
+
+
+def test_generator_defers_run_on_close() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    def gen() -> Iterator[int]:
+        defer(lambda: out.append("deferred"))
+        yield 1
+        out.append("never")
+        yield 2
+
+    it = gen()
+    next(it)
+    it.close()
+    assert out == ["deferred"]
+
+
+def test_generator_body_exception() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    def gen() -> Iterator[int]:
+        defer(lambda: out.append("deferred"))
+        yield 1
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError, match="boom"):
+        list(gen())
+    assert out == ["deferred"]
+
+
+def test_generator_send_and_return_value() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    def gen() -> Generator[int, int, str]:
+        defer(lambda: out.append("deferred"))
+        got = yield 1
+        return f"got {got}"
+
+    it = gen()
+    next(it)
+    assert out == []
+    with pytest.raises(StopIteration) as info:
+        it.send(42)
+    assert info.value.value == "got 42"
+    assert out == ["deferred"]
 
 
 ################################################################################
