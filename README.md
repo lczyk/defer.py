@@ -27,6 +27,8 @@ based on a [post](https://habr.com/en/articles/191786/) by Denis Kolodin.
   the body are fine. anywhere else -- a helper, a thread, a task, a closure called
   later -- raises `RuntimeError`, instead of quietly attaching to whatever else is up
   the stack.
+- `defer` returns its argument, so `@defer` on a nested `def` works for cleanups longer
+  than a lambda (see [hand-off](#hand-off) below).
 - keep `@defers_collector` closest to the `def`. a decorator written in python sitting
   between the two hides the body from `defer`.
 
@@ -58,11 +60,11 @@ def acquire() -> Resource:
     res = Resource("conn")
     handed_off = False
 
+    @defer
     def release() -> None:
         if not handed_off:
             res.close()
 
-    defer(release)
     setup(res)  # may raise, closing res on the way out
     handed_off = True
     return res

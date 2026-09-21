@@ -50,11 +50,11 @@ def acquire(fail: bool) -> Resource:
     res = Resource("conn")
     handed_off = False
 
+    @defer
     def release() -> None:
         if not handed_off:
             res.close()
 
-    defer(release)
     if fail:
         raise ValueError("setup failed")
     handed_off = True

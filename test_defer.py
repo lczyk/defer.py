@@ -332,6 +332,27 @@ def test_async_generator_function_raises() -> None:
             yield 1
 
 
+def test_defer_returns_its_argument() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    def f() -> None:
+        def fn() -> None:
+            out.append("fn")
+
+        assert defer(fn) is fn
+
+        @defer
+        def cleanup() -> None:
+            out.append("cleanup")
+
+        assert callable(cleanup)
+        out.append("body")
+
+    f()
+    assert out == ["body", "cleanup", "fn"]
+
+
 def test_handoff_with_flag() -> None:
     # go idiom: the cleanup only runs if ownership was not handed to the caller
     released: list[str] = []

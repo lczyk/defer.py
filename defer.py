@@ -16,6 +16,7 @@ from typing import Any, TypeVar
 Deferable = Callable[[], object]
 
 _T = TypeVar("_T", bound=Callable[..., Any])
+_D = TypeVar("_D", bound=Deferable)
 
 __all__ = ["defer", "defers_collector"]
 
@@ -32,11 +33,11 @@ _CONTEXT_MANAGERS: dict[CodeType, Callable[[Any], Any]] = {
 }
 
 
-def defer(x: Deferable) -> None:
+def defer(x: _D) -> _D:
     """Defer a function call until the enclosing @defers_collector function exits.
 
     Must be called directly in the body of that function (comprehensions in the body
-    count), otherwise raises RuntimeError.
+    count), otherwise raises RuntimeError. Returns ``x``, so it works as a decorator.
     """
 
     if not callable(x):
@@ -59,6 +60,7 @@ def defer(x: Deferable) -> None:
             f"not in {frame.f_code.co_qualname}"
         )
     wrapper.f_locals["__defers__"].append(x)
+    return x
 
 
 class DefersContainer:
