@@ -1037,3 +1037,55 @@ def test_main() -> None:
         check=True,
     )
     assert res.stdout == "Start\nEnd\nDefer called!\n"
+
+
+EXAMPLE_OUTPUT = """\
+basic: LIFO on return
+  open a
+  open b
+  work
+  close b
+  close a
+failing: deferred calls run on exceptions too
+  open db
+  close db
+  caught ValueError('boom')
+cleanup_fails: errors in deferred calls are logged, not raised
+  work
+  logged: Error in defer: ZeroDivisionError('division by zero')
+  earlier cleanup still runs
+acquire: hand-off
+  open conn
+  handed off, still open
+  close conn
+  open conn
+  close conn
+  caught ValueError('setup failed')
+session: generators and contextmanager
+  open session
+  inside
+  close session
+many: comprehensions
+  open f0
+  open f1
+  open f2
+  close f2
+  close f1
+  close f0
+fetch: async, deferred coroutines are awaited
+  open sock
+  fetched
+  aclose sock
+misuse: defer outside the decorated function's own body
+  defer() must be called directly in a @defers_collector function, not in helper
+"""
+
+
+def test_example() -> None:
+    res = subprocess.run(
+        [sys.executable, str(HERE / "example.py")],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert res.stdout == EXAMPLE_OUTPUT

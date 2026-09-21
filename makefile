@@ -14,3 +14,7 @@ test:  ## Run the tests
 
 .PHONY: verify
 verify: lint test  ## Run all checks
+
+.PHONY: example
+example:  ## Run the examples
+	uv run --no-project python example.py
