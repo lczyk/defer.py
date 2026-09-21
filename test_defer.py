@@ -3,8 +3,9 @@ import inspect
 import subprocess
 import sys
 import threading
-from collections.abc import AsyncIterator, Generator, Iterator
+from collections.abc import AsyncIterator, Coroutine, Generator, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -625,6 +626,127 @@ def test_async_is_still_a_coroutine_function() -> None:
         pass
 
     assert inspect.iscoroutinefunction(f)
+
+
+def test_async_deferred_callables_are_awaited() -> None:
+    out: list[str] = []
+
+    async def cleanup(name: str) -> None:
+        await asyncio.sleep(0)
+        out.append(name)
+
+    @defers_collector
+    async def f() -> None:
+        defer(lambda: cleanup("async 1"))
+        defer(lambda: out.append("sync"))
+        defer(lambda: cleanup("async 2"))
+
+    asyncio.run(f())
+    assert out == ["async 2", "sync", "async 1"]
+
+
+def test_failing_async_deferred_callable_is_reported(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out: list[str] = []
+
+    async def boom() -> None:
+        await asyncio.sleep(0)
+        raise RuntimeError("async defer failed")
+
+    @defers_collector
+    async def f() -> None:
+        defer(lambda: out.append("1"))
+        defer(boom)
+
+    asyncio.run(f())
+    assert out == ["1"]
+    assert "RuntimeError: async defer failed" in capsys.readouterr().err
+
+
+def test_async_deferred_callable_in_sync_function_is_reported(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out: list[str] = []
+    coros: list[Coroutine[Any, Any, None]] = []
+
+    async def cleanup() -> None:
+        out.append("never")
+
+    def make() -> Coroutine[Any, Any, None]:
+        coros.append(cleanup())
+        return coros[-1]
+
+    @defers_collector
+    def f() -> None:
+        defer(lambda: out.append("1"))
+        defer(make)
+
+    f()
+    assert out == ["1"]
+    assert inspect.getcoroutinestate(coros[0]) == inspect.CORO_CLOSED
+    assert "outside an async function" in capsys.readouterr().err
+
+
+def test_awaitable_deferred_in_sync_function_is_reported(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out: list[str] = []
+
+    class Awaitable:
+        def __await__(self) -> Generator[None, None, None]:
+            yield
+
+    @defers_collector
+    def f() -> None:
+        defer(lambda: out.append("1"))
+        defer(Awaitable)
+
+    f()
+    assert out == ["1"]
+    assert "outside an async function" in capsys.readouterr().err
+
+
+def test_cancelled_task_runs_defers() -> None:
+    out: list[str] = []
+    started = asyncio.Event()
+
+    async def cleanup() -> None:
+        await asyncio.sleep(0)
+        out.append("async cleanup")
+
+    @defers_collector
+    async def f() -> None:
+        defer(cleanup)
+        defer(lambda: out.append("sync cleanup"))
+        started.set()
+        await asyncio.sleep(10)
+
+    async def main() -> None:
+        task = asyncio.create_task(f())
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(main())
+    assert out == ["sync cleanup", "async cleanup"]
+
+
+def test_cancelled_error_in_deferred_callable_propagates() -> None:
+    out: list[str] = []
+
+    async def cancelled() -> None:
+        raise asyncio.CancelledError
+
+    @defers_collector
+    async def f() -> None:
+        defer(lambda: out.append("1"))
+        defer(cancelled)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(f())
+    assert out == ["1"]
 
 
 ################################################################################

@@ -54,17 +54,44 @@ class DefersContainer:
         while self.defers:
             d = self.defers.pop()
             try:
-                d()
-            except Exception as e:  # noqa: PERF203
-                _report(e)
-            except BaseException as e:
-                # KeyboardInterrupt, SystemExit, ...: finish unwinding, then propagate
-                if interrupt is None:
-                    interrupt = e
-                else:
-                    _report(e)
+                res = d()
+                if inspect.isawaitable(res):
+                    if inspect.iscoroutine(res):
+                        res.close()
+                    raise TypeError(f"cannot await {d!r} outside an async function")
+            except BaseException as e:  # noqa: PERF203
+                interrupt = _caught(e, interrupt)
         if interrupt is not None:
             raise interrupt
+
+    async def __aenter__(self) -> None:
+        pass
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        interrupt = None
+        while self.defers:
+            d = self.defers.pop()
+            try:
+                res = d()
+                if inspect.isawaitable(res):
+                    await res
+            except BaseException as e:  # noqa: PERF203
+                interrupt = _caught(e, interrupt)
+        if interrupt is not None:
+            raise interrupt
+
+
+def _caught(e: BaseException, interrupt: BaseException | None) -> BaseException | None:
+    # KeyboardInterrupt, SystemExit, ...: finish unwinding, then propagate the first
+    if isinstance(e, Exception) or interrupt is not None:
+        _report(e)
+        return interrupt
+    return e
 
 
 def _report(e: BaseException) -> None:
@@ -95,7 +122,7 @@ def defers_collector(func: _T) -> _T:
         @wraps(func)
         async def async_wrapped(*args: object, **kwargs: object) -> object:
             __defers__ = DefersContainer()
-            with __defers__:
+            async with __defers__:
                 return await func(*args, **kwargs)
 
         return async_wrapped  # type: ignore
