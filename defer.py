@@ -51,11 +51,21 @@ class DefersContainer:
 def defers_collector(func: _T) -> _T:
     """Marks a function to collect defers."""
 
+    if inspect.iscoroutinefunction(func):
+
+        @wraps(func)
+        async def async_wrapped(*args: object, **kwargs: object) -> object:
+            __defers__ = DefersContainer()
+            with __defers__:
+                return await func(*args, **kwargs)
+
+        return async_wrapped  # type: ignore
+
     @wraps(func)
-    def wrapped(*args: object, **kwargs: object) -> None:
+    def wrapped(*args: object, **kwargs: object) -> object:
         __defers__ = DefersContainer()
         with __defers__:
-            func(*args, **kwargs)
+            return func(*args, **kwargs)
 
     return wrapped  # type: ignore
 

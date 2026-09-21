@@ -1,3 +1,5 @@
+import asyncio
+import inspect
 import subprocess
 import sys
 import threading
@@ -311,10 +313,9 @@ def test_thread_does_not_see_callers_collector() -> None:
 
 
 ################################################################################
-# known issues
+# return values
 
 
-@pytest.mark.xfail(strict=True, reason="wrapped discards func's return value")
 def test_returns_value() -> None:
     @defers_collector
     def f() -> int:
@@ -323,22 +324,54 @@ def test_returns_value() -> None:
     assert f() == 42
 
 
-@pytest.mark.xfail(
-    strict=True, reason="coroutine is dropped with the return value, never awaited"
-)
-@pytest.mark.filterwarnings("ignore:coroutine .* was never awaited:RuntimeWarning")
-def test_async() -> None:
-    import asyncio
-
+def test_returns_value_with_defers() -> None:
     out: list[str] = []
 
     @defers_collector
-    async def f() -> None:
+    def f() -> str:
         defer(lambda: out.append("deferred"))
-        out.append("body")
+        return "value"
 
-    asyncio.run(f())  # type: ignore[arg-type]
+    assert f() == "value"
+    assert out == ["deferred"]
+
+
+def test_async() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    async def f() -> int:
+        defer(lambda: out.append("deferred"))
+        await asyncio.sleep(0)
+        out.append("body")
+        return 42
+
+    assert asyncio.run(f()) == 42
     assert out == ["body", "deferred"]
+
+
+def test_async_concurrent_tasks_have_separate_collectors() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    async def f(name: str) -> None:
+        defer(lambda: out.append(f"{name} deferred"))
+        await asyncio.sleep(0)
+        out.append(f"{name} body")
+
+    async def main() -> None:
+        await asyncio.gather(f("a"), f("b"))
+
+    asyncio.run(main())
+    assert out == ["a body", "a deferred", "b body", "b deferred"]
+
+
+def test_async_is_still_a_coroutine_function() -> None:
+    @defers_collector
+    async def f() -> None:
+        pass
+
+    assert inspect.iscoroutinefunction(f)
 
 
 ################################################################################
