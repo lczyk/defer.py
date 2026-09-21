@@ -130,7 +130,7 @@ def test_comprehension_in_undecorated_helper_raises() -> None:
 
 def test_genexpr_consumed_elsewhere_raises() -> None:
     @defers_collector
-    def consume(gen: Iterator[None]) -> None:
+    def consume(gen: Iterator[object]) -> None:
         list(gen)
 
     @defers_collector
@@ -157,7 +157,7 @@ def test_escaped_closure_raises() -> None:
     out: list[str] = []
 
     @defers_collector
-    def make() -> Callable[[], None]:
+    def make() -> Callable[[], object]:
         return lambda: defer(lambda: out.append("escaped"))
 
     late = make()
@@ -302,7 +302,7 @@ def test_decorator_above_property_raises() -> None:
     with pytest.raises(TypeError, match="below @property"):
 
         class C:
-            @defers_collector  # type: ignore[arg-type]
+            @defers_collector  # type: ignore[prop-decorator]
             @property
             def x(self) -> int:
                 return 1
@@ -360,7 +360,12 @@ def test_handoff_with_flag() -> None:
     @defers_collector
     def acquire(fail: bool) -> str:
         handed_off = False
-        defer(lambda: handed_off or released.append("resource"))
+
+        @defer
+        def release() -> None:
+            if not handed_off:
+                released.append("resource")
+
         if fail:
             raise ValueError
         handed_off = True
@@ -435,7 +440,7 @@ def test_generator_defers_run_on_close() -> None:
     out: list[str] = []
 
     @defers_collector
-    def gen() -> Iterator[int]:
+    def gen() -> Generator[int, None, None]:
         defer(lambda: out.append("deferred"))
         yield 1
         out.append("never")
@@ -567,7 +572,7 @@ def test_defers_after_exception_are_not_registered() -> None:
     def f() -> None:
         defer(lambda: out.append("before"))
         raise ValueError
-        defer(lambda: out.append("after"))  # type: ignore[unreachable]
+        defer(lambda: out.append("after"))
 
     with pytest.raises(ValueError):
         f()
@@ -802,7 +807,7 @@ def test_non_callable_defer_raises_at_call_site() -> None:
     @defers_collector
     def f() -> None:
         defer(lambda: out.append("1"))
-        defer(42)  # type: ignore[arg-type]
+        defer(42)  # type: ignore[type-var]
 
     with pytest.raises(TypeError, match="must be callable, not int"):
         f()
