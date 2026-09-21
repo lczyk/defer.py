@@ -23,6 +23,9 @@ __version__ = "0.1.2"
 def defer(x: Deferable) -> None:
     """Defer a function call until the current function scope exits."""
 
+    if not callable(x):
+        raise TypeError(f"defer() argument must be callable, not {type(x).__name__}")
+
     for f in inspect.stack():
         if "__defers__" in f[0].f_locals:
             f[0].f_locals["__defers__"].append(x)

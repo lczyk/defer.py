@@ -378,7 +378,7 @@ def test_only_first_base_exception_propagates(
     assert "SystemExit: 3" in capsys.readouterr().err
 
 
-def test_non_callable_defer_reports_error(capsys: pytest.CaptureFixture[str]) -> None:
+def test_non_callable_defer_raises_at_call_site() -> None:
     out: list[str] = []
 
     @defers_collector
@@ -386,9 +386,9 @@ def test_non_callable_defer_reports_error(capsys: pytest.CaptureFixture[str]) ->
         defer(lambda: out.append("1"))
         defer(42)  # type: ignore[arg-type]
 
-    f()
+    with pytest.raises(TypeError, match="must be callable, not int"):
+        f()
     assert out == ["1"]
-    assert "Error in defer:" in capsys.readouterr().err
 
 
 ################################################################################
