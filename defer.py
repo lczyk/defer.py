@@ -9,7 +9,7 @@ import sys
 import traceback
 from collections.abc import Callable, Generator
 from functools import wraps
-from types import TracebackType
+from types import CodeType, TracebackType
 from typing import Any, TypeVar
 
 Deferable = Callable[[], object]
@@ -21,16 +21,26 @@ __all__ = ["defer", "defers_collector"]
 __version__ = "0.1.2"
 
 
+_WRAPPERS: set[CodeType] = set()
+
+
 def defer(x: Deferable) -> None:
-    """Defer a function call until the current function scope exits."""
+    """Defer a function call until the enclosing @defers_collector function exits.
+
+    Must be called directly in the body of that function.
+    """
 
     if not callable(x):
         raise TypeError(f"defer() argument must be callable, not {type(x).__name__}")
 
-    for f in inspect.stack():
-        if "__defers__" in f[0].f_locals:
-            f[0].f_locals["__defers__"].append(x)
-            break
+    frame = sys._getframe(1)
+    wrapper = frame.f_back
+    if wrapper is None or wrapper.f_code not in _WRAPPERS:
+        raise RuntimeError(
+            "defer() must be called directly in a @defers_collector function, "
+            f"not in {frame.f_code.co_qualname}"
+        )
+    wrapper.f_locals["__defers__"].append(x)
 
 
 class DefersContainer:
@@ -49,7 +59,6 @@ class DefersContainer:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        # pop rather than iterate, so defers registered by a running defer still run
         interrupt = None
         while self.defers:
             d = self.defers.pop()
@@ -125,7 +134,7 @@ def defers_collector(func: _T) -> _T:
             async with __defers__:
                 return await func(*args, **kwargs)
 
-        return async_wrapped  # type: ignore
+        return _register(async_wrapped)  # type: ignore
 
     if inspect.isgeneratorfunction(func):
 
@@ -135,7 +144,7 @@ def defers_collector(func: _T) -> _T:
             with __defers__:
                 return (yield from func(*args, **kwargs))
 
-        return gen_wrapped  # type: ignore
+        return _register(gen_wrapped)  # type: ignore
 
     @wraps(func)
     def wrapped(*args: object, **kwargs: object) -> object:
@@ -143,7 +152,13 @@ def defers_collector(func: _T) -> _T:
         with __defers__:
             return func(*args, **kwargs)
 
-    return wrapped  # type: ignore
+    return _register(wrapped)  # type: ignore
+
+
+def _register(wrapper: Callable[..., Any]) -> Callable[..., Any]:
+    # each kind of wrapper shares one code object across decorations, so this stays tiny
+    _WRAPPERS.add(wrapper.__code__)
+    return wrapper
 
 
 if __name__ == "__main__":

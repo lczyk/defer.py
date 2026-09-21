@@ -1,9 +1,11 @@
 import asyncio
+import gc
 import inspect
 import subprocess
 import sys
 import threading
-from collections.abc import AsyncIterator, Coroutine, Generator, Iterator
+import weakref
+from collections.abc import AsyncIterator, Callable, Coroutine, Generator, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -78,21 +80,63 @@ def test_late_binding_closure() -> None:
     assert out == [2, 2, 2]
 
 
-def test_defer_in_nested_non_collector_function() -> None:
-    # defer attaches to the nearest collector up the stack, not the direct caller
-    out: list[str] = []
-
+def test_defer_in_undecorated_helper_raises() -> None:
     def helper() -> None:
-        defer(lambda: out.append("helper"))
-        out.append("helper body")
+        defer(lambda: None)
 
     @defers_collector
     def f() -> None:
         helper()
-        out.append("f body")
 
-    f()
-    assert out == ["helper body", "f body", "helper"]
+    with pytest.raises(RuntimeError, match=r"not in \w+\.<locals>\.helper$"):
+        f()
+
+
+def test_escaped_closure_raises() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    def make() -> Callable[[], None]:
+        return lambda: defer(lambda: out.append("escaped"))
+
+    late = make()
+
+    @defers_collector
+    def other() -> None:
+        late()
+
+    with pytest.raises(RuntimeError):
+        other()
+    assert out == []
+
+
+def test_local_named_defers_is_not_a_collector() -> None:
+    def f() -> list[object]:
+        __defers__: list[object] = []
+        g()
+        return __defers__
+
+    def g() -> None:
+        defer(lambda: None)
+
+    with pytest.raises(RuntimeError):
+        f()
+
+
+def test_decorator_between_collector_and_function_raises() -> None:
+    def passthrough(func: Callable[[], None]) -> Callable[[], None]:
+        def inner() -> None:
+            func()
+
+        return inner
+
+    @defers_collector
+    @passthrough
+    def f() -> None:
+        defer(lambda: None)
+
+    with pytest.raises(RuntimeError):
+        f()
 
 
 def test_nested_collectors() -> None:
@@ -238,10 +282,31 @@ def test_no_defers() -> None:
     assert called == [True]
 
 
-def test_defer_outside_collector_is_noop() -> None:
-    out: list[str] = []
-    defer(lambda: out.append("never"))
-    assert out == []
+def test_defer_outside_collector_raises() -> None:
+    with pytest.raises(RuntimeError, match="must be called directly"):
+        defer(lambda: None)
+
+
+def test_no_reference_cycle() -> None:
+    class Big:
+        pass
+
+    ref: weakref.ref[Big] | None = None
+
+    @defers_collector
+    def f() -> None:
+        nonlocal ref
+        big = Big()
+        ref = weakref.ref(big)
+        defer(lambda: None)
+
+    gc.disable()
+    try:
+        f()
+        assert ref is not None
+        assert ref() is None
+    finally:
+        gc.enable()
 
 
 ################################################################################
@@ -398,12 +463,14 @@ def test_failing_defer_reports_type_and_traceback(
     assert err.rstrip().endswith("ValueError")
 
 
-def test_defer_during_unwind_runs() -> None:
+def test_defer_inside_deferred_call_is_reported(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     out: list[str] = []
 
     def first() -> None:
         out.append("first")
-        defer(lambda: out.append("registered by first"))
+        defer(lambda: out.append("never"))
 
     @defers_collector
     def f() -> None:
@@ -411,7 +478,8 @@ def test_defer_during_unwind_runs() -> None:
         defer(first)
 
     f()
-    assert out == ["first", "registered by first", "last"]
+    assert out == ["first", "last"]
+    assert "must be called directly" in capsys.readouterr().err
 
 
 class _BrokenStr(Exception):
@@ -551,19 +619,23 @@ def test_threads_have_separate_collectors() -> None:
     assert out == {n: [4, 3, 2, 1, 0] for n in range(4)}
 
 
-def test_thread_does_not_see_callers_collector() -> None:
-    # the stack walk is per-thread, so a defer in a spawned thread with no
-    # collector of its own is dropped rather than attached to the spawner
-    out: list[str] = []
+def test_defer_in_spawned_thread_raises() -> None:
+    errors: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            defer(lambda: None)
+        except RuntimeError as e:
+            errors.append(e)
 
     @defers_collector
     def f() -> None:
-        t = threading.Thread(target=lambda: defer(lambda: out.append("thread")))
+        t = threading.Thread(target=target)
         t.start()
         t.join()
 
     f()
-    assert out == []
+    assert len(errors) == 1
 
 
 ################################################################################
@@ -705,6 +777,18 @@ def test_awaitable_deferred_in_sync_function_is_reported(
     f()
     assert out == ["1"]
     assert "outside an async function" in capsys.readouterr().err
+
+
+def test_defer_in_spawned_task_raises() -> None:
+    async def undecorated() -> None:
+        defer(lambda: None)
+
+    @defers_collector
+    async def f() -> None:
+        await asyncio.create_task(undecorated())
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(f())
 
 
 def test_cancelled_task_runs_defers() -> None:
