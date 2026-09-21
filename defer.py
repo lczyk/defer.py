@@ -9,11 +9,12 @@ import sys
 import traceback
 from collections.abc import Callable
 from functools import wraps
+from types import TracebackType
 from typing import TypeVar
 
-Deferable = Callable[[], None]
+Deferable = Callable[[], object]
 
-_T = TypeVar("_T", bound=Callable)
+_T = TypeVar("_T", bound=Callable[..., object])
 
 __all__ = ["defer", "defers_collector"]
 
@@ -42,7 +43,12 @@ class DefersContainer:
     def __enter__(self) -> None:
         pass
 
-    def __exit__(self, exc_type: type, exc_value: Exception, traceback: type) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         # pop rather than iterate, so defers registered by a running defer still run
         interrupt = None
         while self.defers:
