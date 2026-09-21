@@ -6,6 +6,7 @@ Based on https://habr.com/en/articles/191786/ by Denis Kolodin
 
 import inspect
 import sys
+import traceback
 from collections.abc import Callable
 from functools import wraps
 from typing import TypeVar
@@ -39,13 +40,25 @@ class DefersContainer:
         pass
 
     def __exit__(self, exc_type: type, exc_value: Exception, traceback: type) -> None:
-        for d in reversed(self.defers):
+        # pop rather than iterate, so defers registered by a running defer still run
+        while self.defers:
+            d = self.defers.pop()
             try:
                 d()
             except BaseException as e:  # noqa: PERF203
                 # NOTE: Yes, we want to catch *every* exception here, hence catch BaseException not just Exception
-                sys.stderr.write(f"Error in defer: {e}\n")
-                sys.stderr.flush()
+                _report(e)
+
+
+def _report(e: BaseException) -> None:
+    # runs mid-unwind, so a broken stderr must not replace the real exception
+    try:
+        if sys.stderr is None:
+            return
+        sys.stderr.write("Error in defer:\n" + "".join(traceback.format_exception(e)))
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 def defers_collector(func: _T) -> _T:

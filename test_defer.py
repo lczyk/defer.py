@@ -223,7 +223,9 @@ def test_failing_defer_does_not_stop_the_rest(
 
     f()
     assert out == ["3", "1"]
-    assert "Error in defer: defer failed" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Error in defer:" in err
+    assert "RuntimeError: defer failed" in err
 
 
 def test_failing_defer_does_not_mask_body_exception(
@@ -239,7 +241,92 @@ def test_failing_defer_does_not_mask_body_exception(
 
     with pytest.raises(ValueError, match="body failed"):
         f()
-    assert "Error in defer: defer failed" in capsys.readouterr().err
+    assert "RuntimeError: defer failed" in capsys.readouterr().err
+
+
+def test_failing_defer_reports_type_and_traceback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def boom() -> None:
+        raise ValueError
+
+    @defers_collector
+    def f() -> None:
+        defer(boom)
+
+    f()
+    err = capsys.readouterr().err
+    assert "Traceback (most recent call last)" in err
+    assert "in boom" in err
+    assert err.rstrip().endswith("ValueError")
+
+
+def test_defer_during_unwind_runs() -> None:
+    out: list[str] = []
+
+    def first() -> None:
+        out.append("first")
+        defer(lambda: out.append("registered by first"))
+
+    @defers_collector
+    def f() -> None:
+        defer(lambda: out.append("last"))
+        defer(first)
+
+    f()
+    assert out == ["first", "registered by first", "last"]
+
+
+class _BrokenStr(Exception):
+    def __str__(self) -> str:
+        raise RuntimeError("no str for you")
+
+
+class _BrokenStream:
+    def write(self, s: str) -> int:
+        raise BrokenPipeError
+
+    def flush(self) -> None:
+        raise BrokenPipeError
+
+
+@pytest.mark.parametrize("stderr", [None, _BrokenStream()], ids=["none", "broken"])
+def test_unusable_stderr_does_not_break_unwind(
+    stderr: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out: list[str] = []
+
+    def boom() -> None:
+        raise RuntimeError("defer failed")
+
+    @defers_collector
+    def f() -> None:
+        defer(lambda: out.append("1"))
+        defer(boom)
+        raise ValueError("body failed")
+
+    monkeypatch.setattr(sys, "stderr", stderr)
+    with pytest.raises(ValueError, match="body failed"):
+        f()
+    assert out == ["1"]
+
+
+def test_exception_with_broken_str_is_reported(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out: list[str] = []
+
+    def boom() -> None:
+        raise _BrokenStr
+
+    @defers_collector
+    def f() -> None:
+        defer(lambda: out.append("1"))
+        defer(boom)
+
+    f()
+    assert out == ["1"]
+    assert "_BrokenStr" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("exc", [KeyboardInterrupt, SystemExit, GeneratorExit])
@@ -258,7 +345,7 @@ def test_base_exceptions_in_defer_are_swallowed(
 
     f()
     assert out == ["1"]
-    assert "Error in defer: x" in capsys.readouterr().err
+    assert f"{exc.__name__}: x" in capsys.readouterr().err
 
 
 def test_non_callable_defer_reports_error(capsys: pytest.CaptureFixture[str]) -> None:
