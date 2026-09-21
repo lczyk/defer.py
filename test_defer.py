@@ -330,7 +330,7 @@ def test_exception_with_broken_str_is_reported(
 
 
 @pytest.mark.parametrize("exc", [KeyboardInterrupt, SystemExit, GeneratorExit])
-def test_base_exceptions_in_defer_are_swallowed(
+def test_base_exceptions_in_defer_propagate_after_the_rest(
     exc: type[BaseException], capsys: pytest.CaptureFixture[str]
 ) -> None:
     out: list[str] = []
@@ -342,10 +342,40 @@ def test_base_exceptions_in_defer_are_swallowed(
     def f() -> None:
         defer(lambda: out.append("1"))
         defer(raiser)
+        defer(lambda: out.append("3"))
 
-    f()
-    assert out == ["1"]
-    assert f"{exc.__name__}: x" in capsys.readouterr().err
+    with pytest.raises(exc, match="x"):
+        f()
+    assert out == ["3", "1"]
+    assert capsys.readouterr().err == ""
+
+
+def test_base_exception_in_defer_replaces_body_exception() -> None:
+    @defers_collector
+    def f() -> None:
+        defer(lambda: sys.exit(3))
+        raise ValueError("body failed")
+
+    with pytest.raises(SystemExit) as info:
+        f()
+    assert info.value.code == 3
+    assert isinstance(info.value.__context__, ValueError)
+
+
+def test_only_first_base_exception_propagates(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def interrupt() -> None:
+        raise KeyboardInterrupt
+
+    @defers_collector
+    def f() -> None:
+        defer(lambda: sys.exit(3))
+        defer(interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        f()
+    assert "SystemExit: 3" in capsys.readouterr().err
 
 
 def test_non_callable_defer_reports_error(capsys: pytest.CaptureFixture[str]) -> None:

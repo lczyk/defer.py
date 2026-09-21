@@ -41,13 +41,21 @@ class DefersContainer:
 
     def __exit__(self, exc_type: type, exc_value: Exception, traceback: type) -> None:
         # pop rather than iterate, so defers registered by a running defer still run
+        interrupt = None
         while self.defers:
             d = self.defers.pop()
             try:
                 d()
-            except BaseException as e:  # noqa: PERF203
-                # NOTE: Yes, we want to catch *every* exception here, hence catch BaseException not just Exception
+            except Exception as e:  # noqa: PERF203
                 _report(e)
+            except BaseException as e:
+                # KeyboardInterrupt, SystemExit, ...: finish unwinding, then propagate
+                if interrupt is None:
+                    interrupt = e
+                else:
+                    _report(e)
+        if interrupt is not None:
+            raise interrupt
 
 
 def _report(e: BaseException) -> None:
