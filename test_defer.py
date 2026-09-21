@@ -632,6 +632,49 @@ def test_base_exception_in_defer_replaces_body_exception() -> None:
     assert isinstance(info.value.__context__, ValueError)
 
 
+class _Stop(BaseException):
+    pass
+
+
+@pytest.mark.parametrize("deferred", [_Stop, SystemExit, KeyboardInterrupt])
+def test_in_flight_interrupt_is_not_replaced(
+    deferred: type[BaseException], caplog: pytest.LogCaptureFixture
+) -> None:
+    original = _Stop("body")
+
+    def raiser() -> None:
+        raise deferred("defer")
+
+    @defers_collector
+    def f() -> None:
+        defer(raiser)
+        raise original
+
+    with pytest.raises(_Stop) as info:
+        f()
+    assert info.value is original
+    assert f"{deferred.__name__}: defer" in caplog.text
+
+
+def test_in_flight_interrupt_is_not_replaced_async(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    original = _Stop("body")
+
+    async def raiser() -> None:
+        raise SystemExit("defer")
+
+    @defers_collector
+    async def f() -> None:
+        defer(raiser)
+        raise original
+
+    with pytest.raises(_Stop) as info:
+        asyncio.run(f())
+    assert info.value is original
+    assert "SystemExit: defer" in caplog.text
+
+
 def test_only_first_base_exception_propagates(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

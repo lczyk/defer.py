@@ -71,7 +71,7 @@ class DefersContainer:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        interrupt = None
+        interrupt = _in_flight(exc_value)
         while self.defers:
             d = self.defers.pop()
             try:
@@ -82,7 +82,7 @@ class DefersContainer:
                     raise TypeError(f"cannot await {d!r} outside an async function")
             except BaseException as e:  # noqa: PERF203
                 interrupt = _caught(e, interrupt)
-        if interrupt is not None:
+        if interrupt is not None and interrupt is not exc_value:
             raise interrupt
 
     async def __aenter__(self) -> None:
@@ -94,7 +94,7 @@ class DefersContainer:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        interrupt = None
+        interrupt = _in_flight(exc_value)
         while self.defers:
             d = self.defers.pop()
             try:
@@ -103,8 +103,13 @@ class DefersContainer:
                     await res
             except BaseException as e:  # noqa: PERF203
                 interrupt = _caught(e, interrupt)
-        if interrupt is not None:
+        if interrupt is not None and interrupt is not exc_value:
             raise interrupt
+
+
+def _in_flight(exc: BaseException | None) -> BaseException | None:
+    # an interrupt already propagating outranks any a defer raises
+    return None if exc is None or isinstance(exc, Exception) else exc
 
 
 def _caught(e: BaseException, interrupt: BaseException | None) -> BaseException | None:
