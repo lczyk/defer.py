@@ -1,5 +1,7 @@
 """Micro-benchmarks for defer.py. Run with `python bench_defer.py`."""
 
+from __future__ import annotations
+
 import contextlib
 import inspect
 import sys

@@ -4,14 +4,15 @@ Single-file implementation of Go-like defer statement.
 Based on https://habr.com/en/articles/191786/ by Denis Kolodin
 """
 
+from __future__ import annotations
+
 import contextlib
 import inspect
 import logging
 import sys
-from collections.abc import Callable, Generator
 from functools import wraps
 from types import CodeType, TracebackType
-from typing import Any, TypeVar
+from typing import Any, Callable, Generator, TypeVar
 
 Deferable = Callable[[], object]
 
@@ -57,7 +58,7 @@ def defer(x: _D) -> _D:
     if wrapper is None or wrapper.f_code not in _WRAPPERS:
         raise RuntimeError(
             "defer() must be called directly in a @defers_collector function, "
-            f"not in {frame.f_code.co_qualname}"
+            f"not in {getattr(frame.f_code, 'co_qualname', frame.f_code.co_name)}"
         )
     wrapper.f_locals["__defers__"].append(x)
     return x

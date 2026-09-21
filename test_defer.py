@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import gc
@@ -16,6 +18,9 @@ import pytest
 from defer import defer, defers_collector
 
 HERE = Path(__file__).parent
+
+# co_qualname is 3.11+, before that errors name the bare function
+QUALNAME = sys.version_info >= (3, 11)
 
 
 def test_basic() -> None:
@@ -137,7 +142,8 @@ def test_genexpr_consumed_elsewhere_raises() -> None:
     def f() -> None:
         consume(defer(lambda: None) for _ in range(1))
 
-    with pytest.raises(RuntimeError, match=r"f\.<locals>\.<genexpr>"):
+    match = r"f\.<locals>\.<genexpr>$" if QUALNAME else r"not in <genexpr>$"
+    with pytest.raises(RuntimeError, match=match):
         f()
 
 
@@ -149,7 +155,8 @@ def test_defer_in_undecorated_helper_raises() -> None:
     def f() -> None:
         helper()
 
-    with pytest.raises(RuntimeError, match=r"not in \w+\.<locals>\.helper$"):
+    match = r"not in \w+\.<locals>\.helper$" if QUALNAME else r"not in helper$"
+    with pytest.raises(RuntimeError, match=match):
         f()
 
 
@@ -300,12 +307,7 @@ def test_decorator_above_async_staticmethod() -> None:
 
 def test_decorator_above_property_raises() -> None:
     with pytest.raises(TypeError, match="below @property"):
-
-        class C:
-            @defers_collector  # type: ignore[prop-decorator]
-            @property
-            def x(self) -> int:
-                return 1
+        defers_collector(property(lambda self: 1))  # type: ignore[type-var]
 
 
 def test_async_callable_object() -> None:
@@ -1011,21 +1013,22 @@ def test_defer_in_spawned_task_raises() -> None:
 
 def test_cancelled_task_runs_defers() -> None:
     out: list[str] = []
-    started = asyncio.Event()
 
     async def cleanup() -> None:
         await asyncio.sleep(0)
         out.append("async cleanup")
 
     @defers_collector
-    async def f() -> None:
+    async def f(started: asyncio.Event) -> None:
         defer(cleanup)
         defer(lambda: out.append("sync cleanup"))
         started.set()
         await asyncio.sleep(10)
 
     async def main() -> None:
-        task = asyncio.create_task(f())
+        # created inside the loop: before 3.10 an Event binds to the loop it's made in
+        started = asyncio.Event()
+        task = asyncio.create_task(f(started))
         await started.wait()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

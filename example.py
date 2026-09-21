@@ -1,5 +1,7 @@
 """Examples of defer.py usage. Run with `python example.py`."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import logging
