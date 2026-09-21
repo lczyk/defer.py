@@ -331,6 +331,26 @@ def test_async_generator_function_raises() -> None:
             yield 1
 
 
+def test_handoff_with_flag() -> None:
+    # go idiom: the cleanup only runs if ownership was not handed to the caller
+    released: list[str] = []
+
+    @defers_collector
+    def acquire(fail: bool) -> str:
+        handed_off = False
+        defer(lambda: handed_off or released.append("resource"))
+        if fail:
+            raise ValueError
+        handed_off = True
+        return "resource"
+
+    assert acquire(fail=False) == "resource"
+    assert released == []
+    with pytest.raises(ValueError):
+        acquire(fail=True)
+    assert released == ["resource"]
+
+
 def test_no_defers() -> None:
     called = []
 
