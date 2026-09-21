@@ -3,6 +3,7 @@ import inspect
 import subprocess
 import sys
 import threading
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
@@ -156,6 +157,73 @@ def test_works_on_methods() -> None:
 
     C().m()
     assert out == ["body", "deferred"]
+
+
+@pytest.mark.parametrize("kind", [staticmethod, classmethod])
+def test_decorator_above_static_and_class_method(kind: type) -> None:
+    out: list[str] = []
+
+    def m(*_: object) -> str:
+        defer(lambda: out.append("deferred"))
+        out.append("body")
+        return "value"
+
+    class C:
+        meth = defers_collector(kind(m))
+
+    assert isinstance(C.__dict__["meth"], kind)
+    assert C.meth() == "value"
+    assert C().meth() == "value"
+    assert out == ["body", "deferred"] * 2
+
+
+def test_decorator_above_async_staticmethod() -> None:
+    out: list[str] = []
+
+    class C:
+        @defers_collector
+        @staticmethod
+        async def m() -> None:
+            defer(lambda: out.append("deferred"))
+            await asyncio.sleep(0)
+            out.append("body")
+
+    asyncio.run(C().m())
+    assert out == ["body", "deferred"]
+
+
+def test_decorator_above_property_raises() -> None:
+    with pytest.raises(TypeError, match="below @property"):
+
+        class C:
+            @defers_collector  # type: ignore[arg-type]
+            @property
+            def x(self) -> int:
+                return 1
+
+
+def test_async_callable_object() -> None:
+    out: list[str] = []
+
+    class Handler:
+        async def __call__(self) -> str:
+            defer(lambda: out.append("deferred"))
+            await asyncio.sleep(0)
+            out.append("body")
+            return "value"
+
+    f = defers_collector(Handler())
+    assert inspect.iscoroutinefunction(f)
+    assert asyncio.run(f()) == "value"
+    assert out == ["body", "deferred"]
+
+
+def test_async_generator_function_raises() -> None:
+    with pytest.raises(TypeError, match="async generator"):
+
+        @defers_collector
+        async def agen() -> AsyncIterator[int]:
+            yield 1
 
 
 def test_no_defers() -> None:

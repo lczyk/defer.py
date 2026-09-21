@@ -10,11 +10,11 @@ import traceback
 from collections.abc import Callable
 from functools import wraps
 from types import TracebackType
-from typing import TypeVar
+from typing import Any, TypeVar
 
 Deferable = Callable[[], object]
 
-_T = TypeVar("_T", bound=Callable[..., object])
+_T = TypeVar("_T", bound=Callable[..., Any])
 
 __all__ = ["defer", "defers_collector"]
 
@@ -81,7 +81,16 @@ def _report(e: BaseException) -> None:
 def defers_collector(func: _T) -> _T:
     """Marks a function to collect defers."""
 
-    if inspect.iscoroutinefunction(func):
+    if isinstance(func, (staticmethod, classmethod)):
+        return type(func)(defers_collector(func.__func__))
+    if isinstance(func, property):
+        raise TypeError("defers_collector must be applied below @property, not above")
+    if inspect.isasyncgenfunction(func):
+        raise TypeError("defers_collector does not support async generator functions")
+
+    if inspect.iscoroutinefunction(func) or inspect.iscoroutinefunction(
+        type(func).__call__
+    ):
 
         @wraps(func)
         async def async_wrapped(*args: object, **kwargs: object) -> object:
