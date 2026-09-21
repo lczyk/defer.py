@@ -5,8 +5,8 @@ help:  ## Show this help
 
 .PHONY: lint
 lint:  ## Lint and format-check with ruff
-	uvx ruff check defer.py test_defer.py
-	uvx ruff format --check defer.py test_defer.py
+	uvx ruff check .
+	uvx ruff format --check .
 
 .PHONY: test
 test:  ## Run the tests
