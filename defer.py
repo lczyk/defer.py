@@ -4,6 +4,7 @@ Single-file implementation of Go-like defer statement.
 Based on https://habr.com/en/articles/191786/ by Denis Kolodin
 """
 
+import contextlib
 import inspect
 import logging
 import sys
@@ -25,6 +26,10 @@ log = logging.getLogger(__name__)
 
 _WRAPPERS: set[CodeType] = set()
 _COMPREHENSIONS = frozenset({"<listcomp>", "<setcomp>", "<dictcomp>", "<genexpr>"})
+_CONTEXT_MANAGERS: dict[CodeType, Callable[[Any], Any]] = {
+    cm(lambda: None).__code__: cm  # type: ignore
+    for cm in (contextlib.contextmanager, contextlib.asynccontextmanager)
+}
 
 
 def defer(x: Deferable) -> None:
@@ -131,6 +136,10 @@ def defers_collector(func: _T) -> _T:
         return type(func)(defers_collector(func.__func__))
     if isinstance(func, property):
         raise TypeError("defers_collector must be applied below @property, not above")
+    wrap_cm = _CONTEXT_MANAGERS.get(getattr(func, "__code__", None))  # type: ignore[arg-type]
+    if wrap_cm is not None:
+        # the collector has to wrap the generator itself, so re-apply in that order
+        return wrap_cm(defers_collector(func.__wrapped__))  # type: ignore
     if inspect.isasyncgenfunction(func):
         raise TypeError("defers_collector does not support async generator functions")
 

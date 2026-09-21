@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import gc
 import inspect
 import logging
@@ -455,6 +456,69 @@ def test_generator_send_and_return_value() -> None:
         it.send(42)
     assert info.value.value == "got 42"
     assert out == ["deferred"]
+
+
+def _cm_below(out: list[str]) -> Callable[[], contextlib.AbstractContextManager[str]]:
+    @contextlib.contextmanager
+    @defers_collector
+    def cm() -> Iterator[str]:
+        defer(lambda: out.append("deferred"))
+        out.append("enter")
+        yield "value"
+        out.append("exit")
+
+    return cm
+
+
+def _cm_above(out: list[str]) -> Callable[[], contextlib.AbstractContextManager[str]]:
+    @defers_collector
+    @contextlib.contextmanager
+    def cm() -> Iterator[str]:
+        defer(lambda: out.append("deferred"))
+        out.append("enter")
+        yield "value"
+        out.append("exit")
+
+    return cm
+
+
+@pytest.mark.parametrize("make", [_cm_below, _cm_above], ids=["below", "above"])
+def test_contextmanager(
+    make: Callable[[list[str]], Callable[[], contextlib.AbstractContextManager[str]]],
+) -> None:
+    out: list[str] = []
+    cm = make(out)
+    with cm() as value:
+        assert value == "value"
+        assert out == ["enter"]
+    assert out == ["enter", "exit", "deferred"]
+
+
+@pytest.mark.parametrize("make", [_cm_below, _cm_above], ids=["below", "above"])
+def test_contextmanager_body_exception(
+    make: Callable[[list[str]], Callable[[], contextlib.AbstractContextManager[str]]],
+) -> None:
+    out: list[str] = []
+    cm = make(out)
+    with pytest.raises(ValueError, match="boom"), cm():
+        raise ValueError("boom")
+    assert out == ["enter", "deferred"]
+
+
+def test_asynccontextmanager_raises() -> None:
+    with pytest.raises(TypeError, match="async generator"):
+
+        @defers_collector
+        @contextlib.asynccontextmanager
+        async def above() -> AsyncIterator[None]:
+            yield
+
+    with pytest.raises(TypeError, match="async generator"):
+
+        @contextlib.asynccontextmanager
+        @defers_collector
+        async def below() -> AsyncIterator[None]:
+            yield
 
 
 ################################################################################
