@@ -5,8 +5,8 @@ Based on https://habr.com/en/articles/191786/ by Denis Kolodin
 """
 
 import inspect
+import logging
 import sys
-import traceback
 from collections.abc import Callable, Generator
 from functools import wraps
 from types import CodeType, TracebackType
@@ -19,6 +19,8 @@ _T = TypeVar("_T", bound=Callable[..., Any])
 __all__ = ["defer", "defers_collector"]
 
 __version__ = "0.1.2"
+
+log = logging.getLogger(__name__)
 
 
 _WRAPPERS: set[CodeType] = set()
@@ -114,14 +116,7 @@ def _caught(e: BaseException, interrupt: BaseException | None) -> BaseException 
 
 
 def _report(e: BaseException) -> None:
-    # runs mid-unwind, so a broken stderr must not replace the real exception
-    try:
-        if sys.stderr is None:
-            return
-        sys.stderr.write("Error in defer:\n" + "".join(traceback.format_exception(e)))
-        sys.stderr.flush()
-    except Exception:
-        pass
+    log.error("Error in defer", exc_info=e)
 
 
 def defers_collector(func: _T) -> _T:

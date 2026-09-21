@@ -1,6 +1,7 @@
 import asyncio
 import gc
 import inspect
+import logging
 import subprocess
 import sys
 import threading
@@ -469,7 +470,7 @@ def test_defers_after_exception_are_not_registered() -> None:
 
 
 def test_failing_defer_does_not_stop_the_rest(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     out: list[str] = []
 
@@ -484,13 +485,13 @@ def test_failing_defer_does_not_stop_the_rest(
 
     f()
     assert out == ["3", "1"]
-    err = capsys.readouterr().err
-    assert "Error in defer:" in err
+    err = caplog.text
+    assert "Error in defer" in err
     assert "RuntimeError: defer failed" in err
 
 
 def test_failing_defer_does_not_mask_body_exception(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def boom() -> None:
         raise RuntimeError("defer failed")
@@ -502,11 +503,11 @@ def test_failing_defer_does_not_mask_body_exception(
 
     with pytest.raises(ValueError, match="body failed"):
         f()
-    assert "RuntimeError: defer failed" in capsys.readouterr().err
+    assert "RuntimeError: defer failed" in caplog.text
 
 
 def test_failing_defer_reports_type_and_traceback(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def boom() -> None:
         raise ValueError
@@ -516,14 +517,17 @@ def test_failing_defer_reports_type_and_traceback(
         defer(boom)
 
     f()
-    err = capsys.readouterr().err
+    [record] = caplog.records
+    assert record.name == "defer"
+    assert record.levelno == logging.ERROR
+    err = caplog.text
     assert "Traceback (most recent call last)" in err
     assert "in boom" in err
     assert err.rstrip().endswith("ValueError")
 
 
 def test_defer_inside_deferred_call_is_reported(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     out: list[str] = []
 
@@ -538,7 +542,7 @@ def test_defer_inside_deferred_call_is_reported(
 
     f()
     assert out == ["first", "last"]
-    assert "must be called directly" in capsys.readouterr().err
+    assert "must be called directly" in caplog.text
 
 
 class _BrokenStr(Exception):
@@ -569,6 +573,8 @@ def test_unusable_stderr_does_not_break_unwind(
         defer(boom)
         raise ValueError("body failed")
 
+    # no handlers anywhere, so logging falls back to writing to sys.stderr
+    monkeypatch.setattr(logging.getLogger("defer"), "propagate", False)
     monkeypatch.setattr(sys, "stderr", stderr)
     with pytest.raises(ValueError, match="body failed"):
         f()
@@ -576,7 +582,7 @@ def test_unusable_stderr_does_not_break_unwind(
 
 
 def test_exception_with_broken_str_is_reported(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     out: list[str] = []
 
@@ -590,12 +596,12 @@ def test_exception_with_broken_str_is_reported(
 
     f()
     assert out == ["1"]
-    assert "_BrokenStr" in capsys.readouterr().err
+    assert "_BrokenStr" in caplog.text
 
 
 @pytest.mark.parametrize("exc", [KeyboardInterrupt, SystemExit, GeneratorExit])
 def test_base_exceptions_in_defer_propagate_after_the_rest(
-    exc: type[BaseException], capsys: pytest.CaptureFixture[str]
+    exc: type[BaseException], caplog: pytest.LogCaptureFixture
 ) -> None:
     out: list[str] = []
 
@@ -611,7 +617,7 @@ def test_base_exceptions_in_defer_propagate_after_the_rest(
     with pytest.raises(exc, match="x"):
         f()
     assert out == ["3", "1"]
-    assert capsys.readouterr().err == ""
+    assert caplog.text == ""
 
 
 def test_base_exception_in_defer_replaces_body_exception() -> None:
@@ -627,7 +633,7 @@ def test_base_exception_in_defer_replaces_body_exception() -> None:
 
 
 def test_only_first_base_exception_propagates(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def interrupt() -> None:
         raise KeyboardInterrupt
@@ -639,7 +645,7 @@ def test_only_first_base_exception_propagates(
 
     with pytest.raises(KeyboardInterrupt):
         f()
-    assert "SystemExit: 3" in capsys.readouterr().err
+    assert "SystemExit: 3" in caplog.text
 
 
 def test_non_callable_defer_raises_at_call_site() -> None:
@@ -777,7 +783,7 @@ def test_async_deferred_callables_are_awaited() -> None:
 
 
 def test_failing_async_deferred_callable_is_reported(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     out: list[str] = []
 
@@ -792,11 +798,11 @@ def test_failing_async_deferred_callable_is_reported(
 
     asyncio.run(f())
     assert out == ["1"]
-    assert "RuntimeError: async defer failed" in capsys.readouterr().err
+    assert "RuntimeError: async defer failed" in caplog.text
 
 
 def test_async_deferred_callable_in_sync_function_is_reported(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     out: list[str] = []
     coros: list[Coroutine[Any, Any, None]] = []
@@ -816,11 +822,11 @@ def test_async_deferred_callable_in_sync_function_is_reported(
     f()
     assert out == ["1"]
     assert inspect.getcoroutinestate(coros[0]) == inspect.CORO_CLOSED
-    assert "outside an async function" in capsys.readouterr().err
+    assert "outside an async function" in caplog.text
 
 
 def test_awaitable_deferred_in_sync_function_is_reported(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     out: list[str] = []
 
@@ -835,7 +841,7 @@ def test_awaitable_deferred_in_sync_function_is_reported(
 
     f()
     assert out == ["1"]
-    assert "outside an async function" in capsys.readouterr().err
+    assert "outside an async function" in caplog.text
 
 
 def test_defer_in_spawned_task_raises() -> None:
