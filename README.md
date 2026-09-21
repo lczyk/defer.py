@@ -1,6 +1,6 @@
 # defer.py
 
-`defer` in python. go-like. single file, no dependencies, python 3.11+.
+`defer` in python. go-like. single file, no dependencies, python 3.8+.
 
 ```python
 from defer import defer, defers_collector
@@ -109,7 +109,7 @@ about the same as `ExitStack`, and flat in stack depth. `inspect.stack` is the l
 
 ## development
 
-`make verify` runs ruff, mypy and the tests. `make tox` runs them on python 3.11 to 3.14
+`make verify` runs ruff, mypy and the tests. `make tox` runs them on python 3.8 to 3.14
 via [tox-uv](https://github.com/tox-dev/tox-uv), with the dev tools at their lowest allowed
 versions. `make example` runs [example.py](example.py), `make bench` runs
 [bench_defer.py](bench_defer.py).
