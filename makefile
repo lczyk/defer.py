@@ -18,3 +18,7 @@ verify: lint test  ## Run all checks
 .PHONY: example
 example:  ## Run the examples
 	uv run --no-project python example.py
+
+.PHONY: bench
+bench:  ## Run the benchmarks
+	uv run --no-project python bench_defer.py

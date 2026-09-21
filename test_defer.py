@@ -1089,3 +1089,12 @@ def test_example() -> None:
         check=True,
     )
     assert res.stdout == EXAMPLE_OUTPUT
+
+
+def test_bench_functions_run() -> None:
+    import bench_defer
+
+    for f in (bench_defer.with_defer, bench_defer.exit_stack, bench_defer.try_finally):
+        f()
+    bench_defer.lexical_defers()
+    bench_defer.stack_walk_defers()
