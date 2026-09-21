@@ -8,12 +8,20 @@ lint:  ## Lint and format-check with ruff
 	uvx ruff check .
 	uvx ruff format --check .
 
+.PHONY: typecheck
+typecheck:  ## Type-check with mypy
+	uvx --with pytest mypy
+
 .PHONY: test
 test:  ## Run the tests
 	uvx pytest -q
 
 .PHONY: verify
-verify: lint test  ## Run all checks
+verify: lint typecheck test  ## Run all checks
+
+.PHONY: tox
+tox:  ## Run tests, mypy and ruff on every python version, via tox-uv
+	uvx --with tox-uv tox
 
 .PHONY: example
 example:  ## Run the examples

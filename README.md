@@ -109,5 +109,7 @@ about the same as `ExitStack`, and flat in stack depth. `inspect.stack` is the l
 
 ## development
 
-`make verify` runs ruff and the tests, `make example` runs [example.py](example.py),
-`make bench` runs [bench_defer.py](bench_defer.py).
+`make verify` runs ruff, mypy and the tests. `make tox` runs them on python 3.11 to 3.14
+via [tox-uv](https://github.com/tox-dev/tox-uv), with the dev tools at their lowest allowed
+versions. `make example` runs [example.py](example.py), `make bench` runs
+[bench_defer.py](bench_defer.py).
