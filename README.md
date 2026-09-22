@@ -51,8 +51,9 @@ raise `TypeError` at decoration time.
 ## errors
 
 - an exception from a deferred call is logged to the `defer` logger and the remaining
-  deferred calls still run. with no logging configured it ends up on stderr. a log
-  handler that raises an `Exception` is ignored, the unwind still continues.
+  deferred calls still run. unlike a go panic it never propagates, even when the body
+  returned normally. with no logging configured it ends up on stderr. a log handler
+  that raises an `Exception` is ignored, the unwind still continues.
 - `KeyboardInterrupt`, `SystemExit` and other non-`Exception` errors from deferred calls
   propagate, once every deferred call has run. if the function is already propagating
   one, that one wins and the new one is logged.
