@@ -339,6 +339,14 @@ def test_decorator_above_property_raises() -> None:
         defers_collector(property(lambda self: 1))  # type: ignore[type-var]
 
 
+def test_class_raises() -> None:
+    with pytest.raises(TypeError, match="classes"):
+
+        @defers_collector
+        class C:
+            pass
+
+
 def test_async_callable_object() -> None:
     out: list[str] = []
 

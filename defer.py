@@ -156,6 +156,8 @@ def defers_collector(func: _T) -> _T:
         return type(func)(defers_collector(func.__func__))
     if isinstance(func, property):
         raise TypeError("defers_collector must be applied below @property, not above")
+    if inspect.isclass(func):
+        raise TypeError("defers_collector does not support classes, decorate a method")
     code = getattr(func, "__code__", None)
     if code is _CONTEXT_MANAGER:
         # the collector has to wrap the generator itself, so re-apply in that order
