@@ -587,7 +587,7 @@ def test_contextmanager_body_exception(
 
 
 def test_asynccontextmanager_raises() -> None:
-    with pytest.raises(TypeError, match="async generator"):
+    with pytest.raises(TypeError, match="asynccontextmanager"):
 
         @defers_collector
         @contextlib.asynccontextmanager

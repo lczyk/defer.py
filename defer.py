@@ -28,10 +28,8 @@ log = logging.getLogger(__name__)
 
 _WRAPPERS: set[CodeType] = set()
 _COMPREHENSIONS = frozenset({"<listcomp>", "<setcomp>", "<dictcomp>"})
-_CONTEXT_MANAGERS: dict[CodeType, Callable[[Any], Any]] = {
-    cm(lambda: None).__code__: cm  # type: ignore
-    for cm in (contextlib.contextmanager, contextlib.asynccontextmanager)
-}
+_CONTEXT_MANAGER = contextlib.contextmanager(lambda: None).__code__  # type: ignore
+_ASYNC_CONTEXT_MANAGER = contextlib.asynccontextmanager(lambda: None).__code__  # type: ignore
 
 
 def defer(x: _D) -> _D:
@@ -152,13 +150,20 @@ def defers_collector(func: _T) -> _T:
         return type(func)(defers_collector(func.__func__))
     if isinstance(func, property):
         raise TypeError("defers_collector must be applied below @property, not above")
-    wrap_cm = _CONTEXT_MANAGERS.get(getattr(func, "__code__", None))  # type: ignore[arg-type]
-    if wrap_cm is not None:
+    code = getattr(func, "__code__", None)
+    if code is _CONTEXT_MANAGER:
         # the collector has to wrap the generator itself, so re-apply in that order
-        return wrap_cm(defers_collector(func.__wrapped__))  # type: ignore
+        return contextlib.contextmanager(defers_collector(func.__wrapped__))  # type: ignore
     call = type(func).__call__  # a callable object is whatever its __call__ is
-    if inspect.isasyncgenfunction(func) or inspect.isasyncgenfunction(call):
-        raise TypeError("defers_collector does not support async generator functions")
+    if (
+        code is _ASYNC_CONTEXT_MANAGER
+        or inspect.isasyncgenfunction(func)
+        or inspect.isasyncgenfunction(call)
+    ):
+        raise TypeError(
+            "defers_collector does not support async generator functions, "
+            "incl. under @asynccontextmanager"
+        )
 
     if inspect.iscoroutinefunction(func) or inspect.iscoroutinefunction(call):
 
