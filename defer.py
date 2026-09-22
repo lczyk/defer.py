@@ -58,7 +58,7 @@ def defer(x: _D) -> _D:
     return x
 
 
-class DefersContainer:
+class _DefersContainer:
     def __init__(self) -> None:
         self.defers: list[Deferable] = []
 
@@ -175,7 +175,7 @@ def defers_collector(func: _T) -> _T:
 
         @wraps(func)
         async def async_wrapped(*args: object, **kwargs: object) -> object:
-            __defers__ = DefersContainer()
+            __defers__ = _DefersContainer()
             async with __defers__:
                 return await func(*args, **kwargs)
 
@@ -185,7 +185,7 @@ def defers_collector(func: _T) -> _T:
 
         @wraps(func)
         def gen_wrapped(*args: object, **kwargs: object) -> Generator[Any, Any, Any]:
-            __defers__ = DefersContainer()
+            __defers__ = _DefersContainer()
             with __defers__:
                 return (yield from func(*args, **kwargs))
 
@@ -193,7 +193,7 @@ def defers_collector(func: _T) -> _T:
 
     @wraps(func)
     def wrapped(*args: object, **kwargs: object) -> object:
-        __defers__ = DefersContainer()
+        __defers__ = _DefersContainer()
         with __defers__:
             return func(*args, **kwargs)
 
