@@ -471,6 +471,37 @@ def test_no_reference_cycle() -> None:
         gc.enable()
 
 
+@pytest.mark.parametrize("is_async", [False, True])
+def test_no_reference_cycle_on_interrupt(is_async: bool) -> None:
+    refs: list[weakref.ref[BaseException]] = []
+
+    class Stop(BaseException):
+        def __init__(self) -> None:
+            refs.append(weakref.ref(self))
+
+    def raiser() -> None:
+        raise Stop
+
+    @defers_collector
+    def f() -> None:
+        defer(raiser)
+
+    @defers_collector
+    async def g() -> None:
+        defer(raiser)
+
+    gc.disable()
+    try:
+        with contextlib.suppress(Stop):
+            if is_async:
+                g().send(None)  # no event loop, asyncio keeps cycles of its own
+            else:
+                f()
+        assert refs[0]() is None
+    finally:
+        gc.enable()
+
+
 ################################################################################
 # generators
 

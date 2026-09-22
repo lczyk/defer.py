@@ -86,7 +86,10 @@ class DefersContainer:
             except BaseException as e:  # noqa: PERF203
                 interrupt = _caught(e, interrupt)
         if interrupt is not None and interrupt is not exc_value:
-            raise interrupt
+            try:
+                raise interrupt
+            finally:
+                del interrupt  # break the frame <-> traceback cycle
 
     async def __aenter__(self) -> None:
         pass
@@ -107,7 +110,10 @@ class DefersContainer:
             except BaseException as e:  # noqa: PERF203
                 interrupt = _caught(e, interrupt)
         if interrupt is not None and interrupt is not exc_value:
-            raise interrupt
+            try:
+                raise interrupt
+            finally:
+                del interrupt  # break the frame <-> traceback cycle
 
 
 def _is_future(x: object) -> bool:
