@@ -355,12 +355,36 @@ def test_async_callable_object() -> None:
     assert out == ["body", "deferred"]
 
 
+def test_generator_callable_object() -> None:
+    out: list[str] = []
+
+    class Gen:
+        def __call__(self) -> Iterator[int]:
+            defer(lambda: out.append("deferred"))
+            yield 1
+            out.append("body")
+
+    f = defers_collector(Gen())
+    assert inspect.isgeneratorfunction(f)
+    assert list(f()) == [1]
+    assert out == ["body", "deferred"]
+
+
 def test_async_generator_function_raises() -> None:
     with pytest.raises(TypeError, match="async generator"):
 
         @defers_collector
         async def agen() -> AsyncIterator[int]:
             yield 1
+
+
+def test_async_generator_callable_object_raises() -> None:
+    class AGen:
+        async def __call__(self) -> AsyncIterator[int]:
+            yield 1
+
+    with pytest.raises(TypeError, match="async generator"):
+        defers_collector(AGen())
 
 
 def test_defer_returns_its_argument() -> None:

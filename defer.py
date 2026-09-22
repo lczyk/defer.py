@@ -149,12 +149,11 @@ def defers_collector(func: _T) -> _T:
     if wrap_cm is not None:
         # the collector has to wrap the generator itself, so re-apply in that order
         return wrap_cm(defers_collector(func.__wrapped__))  # type: ignore
-    if inspect.isasyncgenfunction(func):
+    call = type(func).__call__  # a callable object is whatever its __call__ is
+    if inspect.isasyncgenfunction(func) or inspect.isasyncgenfunction(call):
         raise TypeError("defers_collector does not support async generator functions")
 
-    if inspect.iscoroutinefunction(func) or inspect.iscoroutinefunction(
-        type(func).__call__
-    ):
+    if inspect.iscoroutinefunction(func) or inspect.iscoroutinefunction(call):
 
         @wraps(func)
         async def async_wrapped(*args: object, **kwargs: object) -> object:
@@ -164,7 +163,7 @@ def defers_collector(func: _T) -> _T:
 
         return _register(async_wrapped)  # type: ignore
 
-    if inspect.isgeneratorfunction(func):
+    if inspect.isgeneratorfunction(func) or inspect.isgeneratorfunction(call):
 
         @wraps(func)
         def gen_wrapped(*args: object, **kwargs: object) -> Generator[Any, Any, Any]:
