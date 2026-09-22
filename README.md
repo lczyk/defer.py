@@ -23,8 +23,9 @@ based on a [post](https://habr.com/en/articles/191786/) by Denis Kolodin.
 
 - `defer(fn)` registers `fn` to run when the enclosing `@defers_collector` function
   exits, on return or on exception. last in, first out.
-- `defer` must be called directly in the body of that function. comprehensions in
-  the body are fine. anywhere else -- a helper, a thread, a task, a closure called
+- `defer` must be called directly in the body of that function. list, set and dict
+  comprehensions in the body are fine, generator expressions are not -- they can
+  outlive the call. anywhere else -- a helper, a thread, a task, a closure called
   later -- raises `RuntimeError`, instead of quietly attaching to whatever else is up
   the stack.
 - `defer` returns its argument, so `@defer` on a nested `def` works for cleanups longer
@@ -35,6 +36,7 @@ based on a [post](https://habr.com/en/articles/191786/) by Denis Kolodin.
 ## works with
 
 - functions and methods, incl. `staticmethod` / `classmethod` in either order
+- callable objects, treated as their `__call__`
 - `async def`. deferred coroutines, e.g. `defer(conn.aclose)`, are awaited
 - generators. deferred calls run when the generator finishes or is closed
 - `@contextlib.contextmanager`, on either side of it
@@ -45,7 +47,8 @@ both raise `TypeError` at decoration time.
 ## errors
 
 - an exception from a deferred call is logged to the `defer` logger and the remaining
-  deferred calls still run. with no logging configured it ends up on stderr.
+  deferred calls still run. with no logging configured it ends up on stderr. a log
+  handler that raises an `Exception` is ignored, the unwind still continues.
 - `KeyboardInterrupt`, `SystemExit` and other non-`Exception` errors from deferred calls
   propagate, once every deferred call has run. if the function is already propagating
   one, that one wins and the new one is logged.
