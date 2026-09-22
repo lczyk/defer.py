@@ -146,7 +146,8 @@ def defers_collector(func: _T) -> _T:
     """Marks a function to collect defers, which run LIFO when it exits.
 
     Works on plain, async and generator functions, and on either side of
-    @contextlib.contextmanager. Not above @property; no async generator functions.
+    @contextlib.contextmanager. Not above @property; no async generator functions or
+    classes.
 
     Exceptions from deferred calls are logged. KeyboardInterrupt, SystemExit and
     other non-Exception errors propagate once every deferred call has run.

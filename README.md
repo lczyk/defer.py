@@ -41,8 +41,9 @@ based on a [post](https://habr.com/en/articles/191786/) by Denis Kolodin.
 - generators. deferred calls run when the generator finishes or is closed
 - `@contextlib.contextmanager`, on either side of it
 
-not supported: async generator functions, and sitting above `@property` (put it below).
-both raise `TypeError` at decoration time.
+not supported: async generator functions (incl. under `@contextlib.asynccontextmanager`),
+classes (decorate a method instead), and sitting above `@property` (put it below). all
+raise `TypeError` at decoration time.
 
 ## errors
 
