@@ -81,7 +81,7 @@ class DefersContainer:
             d = self.defers.pop()
             try:
                 res = d()
-                if inspect.isawaitable(res):
+                if inspect.isawaitable(res) and not _is_future(res):
                     if inspect.iscoroutine(res):
                         res.close()
                     raise TypeError(f"cannot await {d!r} outside an async function")
@@ -110,6 +110,13 @@ class DefersContainer:
                 interrupt = _caught(e, interrupt)
         if interrupt is not None and interrupt is not exc_value:
             raise interrupt
+
+
+def _is_future(x: object) -> bool:
+    # a future or task is already scheduled, so dropping it is fine. no future can
+    # exist without asyncio loaded, so don't import it just to check
+    asyncio = sys.modules.get("asyncio")
+    return asyncio is not None and asyncio.isfuture(x)
 
 
 def _in_flight(exc: BaseException | None) -> BaseException | None:

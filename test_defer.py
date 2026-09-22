@@ -1077,6 +1077,27 @@ def test_awaitable_deferred_in_sync_function_is_reported(
     assert "outside an async function" in caplog.text
 
 
+def test_future_deferred_in_sync_function_is_not_reported(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    out: list[str] = []
+
+    async def job() -> None:
+        out.append("job")
+
+    async def main() -> None:
+        @defers_collector
+        def f() -> None:
+            defer(lambda: asyncio.ensure_future(job()))
+
+        f()
+        await asyncio.sleep(0)
+
+    asyncio.run(main())
+    assert out == ["job"]
+    assert "Error in defer" not in caplog.text
+
+
 def test_defer_in_spawned_task_raises() -> None:
     async def undecorated() -> None:
         defer(lambda: None)
