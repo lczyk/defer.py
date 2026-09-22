@@ -37,7 +37,10 @@ based on a [post](https://habr.com/en/articles/191786/) by Denis Kolodin.
 
 - functions and methods, incl. `staticmethod` / `classmethod` in either order
 - callable objects, treated as their `__call__`
-- `async def`. deferred coroutines, e.g. `defer(conn.aclose)`, are awaited
+- `async def`. anything awaitable a deferred call returns is awaited: coroutines, e.g.
+  `defer(conn.aclose)`, but also a task from `create_task`, so the function waits for it.
+  in a plain function a coroutine or other awaitable can't be awaited and is logged as
+  an error, but a future or task is already scheduled and left to run
 - generators. deferred calls run when the generator finishes or is closed
 - `@contextlib.contextmanager`, on either side of it
 
