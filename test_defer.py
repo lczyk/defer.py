@@ -87,7 +87,7 @@ def test_late_binding_closure() -> None:
     assert out == [2, 2, 2]
 
 
-@pytest.mark.parametrize("kind", ["list", "set", "dict", "genexpr"])
+@pytest.mark.parametrize("kind", ["list", "set", "dict"])
 def test_defer_in_comprehension(kind: str) -> None:
     out: list[int] = []
 
@@ -98,13 +98,42 @@ def test_defer_in_comprehension(kind: str) -> None:
             [defer(fn) for fn in fns]
         elif kind == "set":
             {defer(fn) for fn in fns}
-        elif kind == "dict":
-            {i: defer(fn) for i, fn in enumerate(fns)}
         else:
-            list(defer(fn) for fn in fns)
+            {i: defer(fn) for i, fn in enumerate(fns)}
 
     f()
     assert out == [2, 1, 0]
+
+
+def test_defer_in_genexpr_raises() -> None:
+    # a generator expression can outlive the call, so it is not part of the body
+    out: list[int] = []
+
+    @defers_collector
+    def f() -> None:
+        list(defer(lambda i=i: out.append(i)) for i in range(3))
+
+    match = r"f\.<locals>\.<genexpr>$" if QUALNAME else r"not in <genexpr>$"
+    with pytest.raises(RuntimeError, match=match):
+        f()
+    assert out == []
+
+
+def test_genexpr_consumed_by_another_call_raises() -> None:
+    out: list[str] = []
+
+    @defers_collector
+    def f(gen: Iterator[object] | None = None) -> Iterator[object] | None:
+        if gen is None:
+            return (defer(lambda: out.append("escaped")) for _ in range(1))
+        list(gen)
+        return None
+
+    escaped = f()
+    assert escaped is not None
+    with pytest.raises(RuntimeError):
+        f(escaped)
+    assert out == []
 
 
 def test_defer_in_nested_comprehension() -> None:

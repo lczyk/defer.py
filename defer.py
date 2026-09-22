@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 
 _WRAPPERS: set[CodeType] = set()
-_COMPREHENSIONS = frozenset({"<listcomp>", "<setcomp>", "<dictcomp>", "<genexpr>"})
+_COMPREHENSIONS = frozenset({"<listcomp>", "<setcomp>", "<dictcomp>"})
 _CONTEXT_MANAGERS: dict[CodeType, Callable[[Any], Any]] = {
     cm(lambda: None).__code__: cm  # type: ignore
     for cm in (contextlib.contextmanager, contextlib.asynccontextmanager)
@@ -37,23 +37,19 @@ _CONTEXT_MANAGERS: dict[CodeType, Callable[[Any], Any]] = {
 def defer(x: _D) -> _D:
     """Defer a function call until the enclosing @defers_collector function exits.
 
-    Must be called directly in the body of that function (comprehensions in the body
-    count), otherwise raises RuntimeError. Returns ``x``, so it works as a decorator.
+    Must be called directly in the body of that function (list, set and dict
+    comprehensions in the body count, generator expressions do not), otherwise raises
+    RuntimeError. Returns ``x``, so it works as a decorator.
     """
 
     if not callable(x):
         raise TypeError(f"defer() argument must be callable, not {type(x).__name__}")
 
     frame = sys._getframe(1)
-    # comprehensions run in their own frame before 3.12, generator expressions always
-    # do. step out only into the function defining them, not whoever drives a genexpr.
-    while frame.f_code.co_name in _COMPREHENSIONS:
-        parent = frame.f_back
-        if parent is None or not any(
-            c is frame.f_code for c in parent.f_code.co_consts
-        ):
-            break
-        frame = parent
+    # before 3.12 comprehensions run in their own frame: step out into the function
+    # defining them. not generator expressions, those can outlive the call.
+    while frame.f_code.co_name in _COMPREHENSIONS and frame.f_back is not None:
+        frame = frame.f_back
     wrapper = frame.f_back
     if wrapper is None or wrapper.f_code not in _WRAPPERS:
         raise RuntimeError(
