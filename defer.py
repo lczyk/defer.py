@@ -126,7 +126,9 @@ def _caught(e: BaseException, interrupt: BaseException | None) -> BaseException 
 
 
 def _report(e: BaseException) -> None:
-    log.error("Error in defer", exc_info=e)
+    # a broken log handler must not stop the unwind
+    with contextlib.suppress(Exception):
+        log.error("Error in defer", exc_info=e)
 
 
 def defers_collector(func: _T) -> _T:

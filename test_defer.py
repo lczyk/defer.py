@@ -722,6 +722,31 @@ def test_unusable_stderr_does_not_break_unwind(
     assert out == ["1"]
 
 
+class _BrokenHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        raise OSError("handler failed")
+
+
+def test_broken_log_handler_does_not_break_unwind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out: list[str] = []
+
+    def boom() -> None:
+        raise RuntimeError("defer failed")
+
+    @defers_collector
+    def f() -> None:
+        defer(lambda: out.append("1"))
+        defer(boom)
+        raise ValueError("body failed")
+
+    monkeypatch.setattr(logging.getLogger("defer"), "handlers", [_BrokenHandler()])
+    with pytest.raises(ValueError, match="body failed"):
+        f()
+    assert out == ["1"]
+
+
 def test_exception_with_broken_str_is_reported(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
